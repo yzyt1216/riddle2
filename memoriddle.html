@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>神経衰弱ゲーム</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Inter Font -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8; /* Light gray background */
+            display: flex;
+            justify-content: center;
+            align-items: flex-start; /* Align to start to allow space for header */
+            min-height: 100vh;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        #root {
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 20px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            width: 100%;
+            max-width: 500px; /* Max width for better presentation on large screens */
+        }
+        /* Custom styles for card flip animation (optional, but good for UX) */
+        .card-container {
+            perspective: 1000px;
+        }
+        .card-inner {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            text-align: center;
+            transition: transform 0.6s;
+            transform-style: preserve-3d;
+            border-radius: 12px; /* Rounded corners for inner card */
+        }
+        .card-flipped .card-inner {
+            transform: rotateY(180deg);
+        }
+        .card-face {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            -webkit-backface-visibility: hidden;
+            backface-visibility: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 2.5rem; /* Larger font for numbers */
+            font-weight: bold;
+            color: #ffffff;
+            border-radius: 12px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+            background-size: cover;
+            background-position: center;
+            overflow: hidden; /* Ensure image doesn't spill out */
+        }
+        .card-face img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover; /* Cover the card area without distortion */
+            border-radius: 12px; /* Match card border-radius */
+        }
+        .card-back {
+            background-color: #3b82f6; /* Blue back of card */
+            background-image: url('https://placehold.co/100x145/3b82f6/FFFFFF?text=BACK'); /* Placeholder for card back */
+        }
+        .card-front {
+            background-color: #10b981; /* Green front of card - will be covered by image */
+            transform: rotateY(180deg);
+        }
+        .card-matched {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <!-- React and ReactDOM CDN -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- Babel for JSX transformation -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        // Function to generate shuffled cards (now with words and unique types for pairs)
+        const generateShuffledCards = () => {
+            // Define the words for the cards in the specified order
+            const baseWords = ["トラウマ", "イシ", "ファイト", "ミラー", "キバコ", "フォン", "ミツバチ", "ニジ"];
+            
+            // Create two distinct sets for each word to allow different images per pair
+            const cardData = baseWords.flatMap(word => [
+                { value: word, type: 'A' }, // First card of the pair
+                { value: word, type: 'B' }  // Second card of the pair (different image, same value)
+            ]);
+            
+            return cardData.sort(() => Math.random() - 0.5); // Shuffle the unique card objects
+        };
+
+        // Function to get image URL based on card value and type
+        const getCardImageUrl = (cardObject) => {
+            const { value, type } = cardObject;
+            
+            // あなたの実際の画像ファイルパスまたはURLに置き換えてください。
+            // 各単語とタイプに特定の画像パスをマッピングします。
+            switch (value) {
+                case "トラウマ":
+                    return type === 'A' ? "1A.png" : "1B.png";
+                case "イシ":
+                    return type === 'A' ? "2A.png" : "2B.png";
+                case "ファイト":
+                    return type === 'A' ? "3A.png" : "3B.png";
+                case "ミラー":
+                    return type === 'A' ? "4A.png" : "4B.png";
+                case "キバコ":
+                    return type === 'A' ? "5A.png" : "5B.png";
+                case "フォン":
+                    return type === 'A' ? "6A.png" : "6B.png";
+                case "ミツバチ":
+                    return type === 'A' ? "7A.png" : "7B.png";
+                case "ニジ":
+                    return type === 'A' ? "8A.png" : "8B.png";
+                default:
+               
+        };
+            return `https://placehold.co/100x145/${color}/FFFFFF?text=${encodeURIComponent(value + '_' + type)}`;
+        };
+
+        const App = () => {
+            const [cards, setCards] = useState([]); // Array to hold card objects {value, type}
+            const [flippedIndexes, setFlippedIndexes] = useState([]); // Indexes of currently flipped cards
+            const [matchedIndexes, setMatchedIndexes] = useState([]); // Indexes of matched pairs
+            const [isGameOver, setIsGameOver] = useState(false); // Whether the game is over
+            const [time, setTime] = useState(0); // Elapsed time in seconds
+            const [inputModalOpen, setInputModalOpen] = useState(false); // State for input modal visibility
+            // `pendingMatchValue` will now hold the word of the first flipped card's value
+            const [pendingMatchValue, setPendingMatchValue] = useState(null);
+            const [feedbackMessage, setFeedbackMessage] = useState(''); // Message for correct/incorrect input
+            const inputRef = useRef(null); // Ref for the input field
+
+            // Function to reset the game
+            const resetGame = () => {
+                setCards(generateShuffledCards()); // Generate and shuffle new cards
+                setFlippedIndexes([]); // Reset flipped state
+                setMatchedIndexes([]); // Reset matched state
+                setIsGameOver(false); // Reset game over state
+                setTime(0); // Reset timer
+                setInputModalOpen(false); // Close modal
+                setPendingMatchValue(null); // Clear pending match value
+                setFeedbackMessage(''); // Clear feedback
+            };
+
+            // useEffect to manage the timer
+            useEffect(() => {
+                let timer;
+                // If the game is in progress and within the time limit (60 seconds)
+                // And the input modal is not open (to pause timer during input)
+                if (!isGameOver && time < 60 && !inputModalOpen) {
+                    timer = setInterval(() => {
+                        setTime((prevTime) => prevTime + 1); // Update time every second
+                    }, 1000);
+                } else if (time >= 60 && !isGameOver) {
+                    // If 60 seconds have passed but the game is not yet over
+                    setIsGameOver(true); // Set game over
+                    clearInterval(timer); // Stop the timer
+                }
+
+                // Cleanup function: clear the timer when the component unmounts or dependencies change
+                return () => clearInterval(timer);
+            }, [time, isGameOver, inputModalOpen]); // Rerun when time, isGameOver, or inputModalOpen changes
+
+            // Initialize the game when the component mounts
+            useEffect(() => {
+                resetGame();
+            }, []); // Empty dependency array, so runs only on initial render
+
+            // Focus on input when modal opens
+            useEffect(() => {
+                if (inputModalOpen && inputRef.current) {
+                    inputRef.current.focus();
+                }
+            }, [inputModalOpen]);
+
+            // Handler when a card is clicked
+            const handleCardClick = (index) => {
+                // Do nothing if two cards are already flipped, the clicked card is already flipped, or already matched
+                if (
+                    flippedIndexes.length === 2 ||
+                    flippedIndexes.includes(index) ||
+                    matchedIndexes.includes(index) ||
+                    inputModalOpen // Prevent clicks when modal is open
+                ) {
+                    return;
+                }
+
+                setFeedbackMessage(''); // Clear any previous feedback message
+
+                // Add the index of the clicked card to the flipped state
+                setFlippedIndexes((prev) => [...prev, index]);
+
+                // If a second card is flipped
+                if (flippedIndexes.length === 1) {
+                    const firstIndex = flippedIndexes[0]; // Index of the first card
+                    // Set pending value to the 'value' property of the first card object
+                    setPendingMatchValue(cards[firstIndex].value); 
+                    // Always open the input modal after two cards are flipped, with a 0 second delay
+                    setTimeout(() => {
+                        setInputModalOpen(true);
+                    }, 0); // Delay for modal appearance
+                }
+            };
+
+            // Handler for word input submission
+            const handleWordInputSubmit = () => {
+                const inputValue = inputRef.current.value; // Get value as string
+                const [firstIndex, secondIndex] = flippedIndexes;
+                // Compare the 'value' property of the card objects for actual match
+                const cardsActuallyMatch = cards[firstIndex].value === cards[secondIndex].value;
+
+                // Check for input correctness AND actual card match
+                // Input value is trimmed and converted to lowercase for case-insensitive comparison
+                if (inputValue.trim().toLowerCase() === pendingMatchValue.toLowerCase() && cardsActuallyMatch) {
+                    // Correct input AND cards actually match: add to matched indexes
+                    setMatchedIndexes((prev) => [...prev, firstIndex, secondIndex]);
+                    setFeedbackMessage('正解！カードを手札に入れました！');
+                } else {
+                    // Incorrect input OR cards don't match: flip cards back
+                    setFeedbackMessage('不正解！もう一度挑戦！');
+                }
+
+                // Clear flipped state after input (whether correct or incorrect)
+                setFlippedIndexes([]);
+                // Close modal and clear pending value
+                setInputModalOpen(false);
+                setPendingMatchValue(null);
+                // Clear feedback message after a short delay
+                setTimeout(() => setFeedbackMessage(''), 1500);
+            };
+
+            // Handler for skipping the input
+            const handleSkipInput = () => {
+                setFeedbackMessage('スキップしました！カードは裏に戻ります。');
+                setFlippedIndexes([]); // Flip cards back
+                setInputModalOpen(false); // Close modal
+                setPendingMatchValue(null); // Clear pending value
+                setTimeout(() => setFeedbackMessage(''), 1500); // Clear feedback after delay
+            };
+
+
+            // Effect to check if all cards are matched
+            useEffect(() => {
+                if (matchedIndexes.length === cards.length && cards.length > 0) {
+                    setIsGameOver(true); // If all cards are matched, game over
+                }
+            }, [matchedIndexes, cards.length]); // Rerun when matchedIndexes or cards.length changes
+
+            // Game rendering
+            return (
+                <div className="flex flex-col items-center p-4 sm:p-6 md:p-8">
+                    <h1 className="text-4xl font-extrabold text-blue-700 mb-6 rounded-lg px-4 py-2 bg-blue-100 shadow-md">神経衰弱</h1>
+
+                    {isGameOver ? (
+                        <div className="text-2xl font-semibold text-green-600 mb-4 rounded-lg bg-green-100 p-3 shadow-sm">
+                            {time < 60 ? `ゲームクリア！${time}秒で全てのカードが揃いました！` : `時間切れ！ゲーム終了。`}
+                        </div>
+                    ) : (
+                        <div className="text-xl font-medium text-gray-700 mb-4 rounded-lg bg-gray-100 p-2 shadow-sm">
+                            残り時間: <span className="font-bold text-red-500">{60 - time}</span>秒
+                        </div>
+                    )}
+
+                    {feedbackMessage && (
+                        <div className={`text-lg font-semibold mb-4 p-2 rounded-lg shadow-sm ${feedbackMessage.includes('正解') ? 'bg-green-200 text-green-800' : feedbackMessage.includes('不正解') ? 'bg-red-200 text-red-800' : 'bg-yellow-200 text-yellow-800'}`}>
+                            {feedbackMessage}
+                        </div>
+                    )}
+
+                    <button
+                        onClick={resetGame}
+                        className="bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 px-6 rounded-full shadow-lg hover:shadow-xl transition-all duration-300 ease-in-out transform hover:scale-105 mb-8 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-opacity-75"
+                    >
+                        ゲームリセット
+                    </button>
+
+                    <div
+                        className="grid grid-cols-4 sm:grid-cols-4 md:grid-cols-4 gap-3 md:gap-4 lg:gap-5 p-4 bg-gray-50 rounded-xl shadow-inner"
+                        style={{ maxWidth: '440px' }} /* Max width for better presentation on large screens */
+                    >
+                        {cards.map((card, index) => {
+                            const isFlipped = flippedIndexes.includes(index) || matchedIndexes.includes(index);
+                            const isMatched = matchedIndexes.includes(index);
+                            return (
+                                <div
+                                    key={index}
+                                    onClick={() => handleCardClick(index)}
+                                    className={`relative w-[95px] h-[140px] sm:w-[100px] sm:h-[145px] cursor-pointer card-container ${isFlipped ? 'card-flipped' : ''} ${isMatched ? 'card-matched' : ''}`}
+                                >
+                                    <div className="card-inner">
+                                        {/* Back of the card */}
+                                        <div className="card-face card-back flex items-center justify-center">
+                                            {/* Placeholder for card back image. */}
+                                        </div>
+                                        {/* Front of the card */}
+                                        <div className="card-face card-front flex items-center justify-center"
+                                             style={{ backgroundColor: isMatched ? '#d1fae5' : 'transparent' /* Light green for matched, transparent otherwise to show image */}}>
+                                            {/* Use img tag for card front, passing the card object */}
+                                            <img
+                                                src={getCardImageUrl(card)}
+                                                alt={`Card ${card.value} ${card.type}`}
+                                                // Fallback image in case the main image fails to load
+                                                onerror="this.onerror=null;this.src='https://placehold.co/100x145/AAAAAA/FFFFFF?text=Error';"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+
+                    {/* Input Modal - Now placed in the normal document flow below the grid */}
+                    {inputModalOpen && (
+                        <div className="bg-white p-8 rounded-xl shadow-2xl max-w-sm w-full text-center mt-8"> {/* Added mt-8 for spacing */}
+                            <h2 className="text-2xl font-bold text-gray-800 mb-4">カードの単語を入力してください</h2>
+                            <p className="text-gray-600 mb-6">めくったカードの1枚目の単語: {pendingMatchValue}</p>
+                            <input
+                                ref={inputRef}
+                                type="text" /* Changed type to text for word input */
+                                placeholder="単語を入力" /* Changed placeholder text */
+                                className="w-full p-3 mb-4 border-2 border-gray-300 rounded-lg text-lg text-center focus:outline-none focus:border-blue-500 transition duration-200"
+                                onKeyPress={(e) => {
+                                    if (e.key === 'Enter') {
+                                        handleWordInputSubmit();
+                                    }
+                                }}
+                            />
+                            <button
+                                onClick={handleWordInputSubmit}
+                                className="bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:shadow-lg transition-all duration-300 ease-in-out w-full focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-75 mb-3"
+                            >
+                                手札を入手！
+                            </button>
+                            <button
+                                onClick={handleSkipInput}
+                                className="bg-gray-400 hover:bg-gray-500 text-white font-bold py-3 px-6 rounded-lg shadow-md hover:shadow-lg transition-all duration-300 ease-in-out w-full focus:outline-none focus:ring-2 focus:ring-gray-300 focus:ring-opacity-75"
+                            >
+                                スキップ
+                            </button>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+</html>
