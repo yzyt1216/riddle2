@@ -132,9 +132,12 @@
                 case "ニジ":
                     return type === 'A' ? "8A.png" : "8B.png";
                 default:
-               
-        };
-            return `https://placehold.co/100x145/${color}/FFFFFF?text=${encodeURIComponent(value + '_' + type)}`;
+                    // Fallback for unknown cards or if no specific image is defined
+                    // This will now correctly return a placeholder for unmatched values
+                    return "https://placehold.co/100x145/AAAAAA/FFFFFF?text=Error"; 
+            }
+            // 以下の行は削除されました。これがエラーの原因でした。
+            // return `https://placehold.co/100x145/${color}/FFFFFF?text=${encodeURIComponent(value + '_' + type)}`;
         };
 
         const App = () => {
